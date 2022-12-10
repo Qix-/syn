@@ -34,6 +34,8 @@ clone-impls = []
 extra-traits = []
 proc-macro = ["proc-macro2/proc-macro", "quote/proc-macro"]
 test = ["syn-test-suite/all-features"]
+diagnostics = ["proc-macro"]
+unstable = ["diagnostics"]
 
 [dependencies]
 proc-macro2 = { version = "1.0.46", default-features = false }

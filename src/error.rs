@@ -86,6 +86,27 @@ pub struct Error {
     messages: Vec<ErrorMessage>,
 }
 
+/// The severity level of [ErrorMessage]s.
+#[cfg(feature = "diagnostics")]
+pub enum Level {
+    Error,
+    Warning,
+    Note,
+    Help,
+}
+
+#[cfg(feature = "diagnostics")]
+impl Into<proc_macro::Level> for Level {
+    fn into(self) -> proc_macro::Level {
+        match self {
+            Error => proc_macro::Level::Error,
+            Warning => proc_macro::Level::Warning,
+            Note => proc_macro::Level::Note,
+            Help => proc_macro::Level::Help,
+        }
+    }
+}
+
 struct ErrorMessage {
     // Span is implemented as an index into a thread-local interner to keep the
     // size small. It is not safe to access from a different thread. We want
@@ -95,6 +116,8 @@ struct ErrorMessage {
     start_span: ThreadBound<Span>,
     end_span: ThreadBound<Span>,
     message: String,
+    #[cfg(feature = "diagnostics")]
+    level: Level,
 }
 
 #[cfg(test)]
@@ -142,6 +165,8 @@ impl Error {
                     start_span: ThreadBound::new(span),
                     end_span: ThreadBound::new(span),
                     message,
+                    #[cfg(feature = "diagnostics")]
+                    level: Level::Error,
                 }],
             }
         }
@@ -173,6 +198,8 @@ impl Error {
                     start_span: ThreadBound::new(start),
                     end_span: ThreadBound::new(end),
                     message,
+                    #[cfg(feature = "diagnostics")]
+                    level: Level::Error,
                 }],
             }
         }
@@ -304,6 +331,8 @@ pub fn new2<T: Display>(start: Span, end: Span, message: T) -> Error {
                 start_span: ThreadBound::new(start),
                 end_span: ThreadBound::new(end),
                 message,
+                #[cfg(feature = "diagnostics")]
+                level: Level::Error,
             }],
         }
     }
@@ -357,6 +386,8 @@ impl Clone for ErrorMessage {
             start_span: ThreadBound::new(start),
             end_span: ThreadBound::new(end),
             message: self.message.clone(),
+            #[cfg(feature = "diagnostics")]
+            level: Level::Error,
         }
     }
 }
@@ -424,5 +455,58 @@ impl Extend<Error> for Error {
         for err in iter {
             self.combine(err);
         }
+    }
+}
+
+#[cfg(feature = "diagnostics")]
+impl Into<proc_macro::Diagnostic> for Error {
+    fn into(self) -> proc_macro::Diagnostic {
+        let iter = self.messages.into_iter();
+        let base = {
+            let message = iter.next().unwrap();
+            proc_macro::Diagnostic::spanned(
+                &[
+                    // XXX Welp. There is no "into" for pm2::Span -> pm1::Span.
+                    // XXX See tracking issue: https://github.com/dtolnay/syn/issues/1259
+                    message
+                        .start_span
+                        .get()
+                        .unwrap_or_else(|| &proc_macro2::Span::call_site())
+                        .into(),
+                    message
+                        .end_span
+                        .get()
+                        .unwrap_or_else(|| &proc_macro2::Span::call_site())
+                        .into(),
+                ],
+                message.level.into(),
+                message.message,
+            )
+        };
+
+        iter.fold(base, |diag, message| {
+            let spans = &[
+                message
+                    .start_span
+                    .get()
+                    .unwrap_or_else(|| &proc_macro::Span::call_site())
+                    .into(),
+                message
+                    .end_span
+                    .get()
+                    .unwrap_or_else(|| &proc_macro::Span::call_site())
+                    .into(),
+            ];
+
+            // TODO If the Diagnostic API ever gets a child-error
+            // TODO creation method that takes a Level, use that instead
+            // TODO of a match expression here.
+            match message.level {
+                Level::Error => diag.span_error(spans, message.message),
+                Level::Warning => diag.span_warning(spans, message.message),
+                Level::Help => diag.span_help(spans, message.message),
+                Level::Note => diag.span_note(spans, message.message),
+            }
+        })
     }
 }

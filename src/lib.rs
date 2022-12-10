@@ -248,10 +248,14 @@
 //!   types.
 //! - **`proc-macro`** *(enabled by default)* — Runtime dependency on the
 //!   dynamic library libproc_macro from rustc toolchain.
+//! - **`unstable`** - Enable all unstable features
+//! - **`diagnostics`** *(enabled by `unstable`) - Enable support for unstable
+//!   coersion from [syn::Error] to the new [proc_macro::Diagnostic] API.
 
 // Syn types in rustdoc of other crates get linked to here.
 #![doc(html_root_url = "https://docs.rs/syn/1.0.105")]
 #![cfg_attr(doc_cfg, feature(doc_cfg))]
+#![cfg_attr(feature = "diagnostics", feature(proc_macro_diagnostic))]
 #![allow(non_camel_case_types)]
 #![allow(
     clippy::bool_to_int_with_if,
